@@ -15,6 +15,7 @@ use Predis\ClientContextInterface;
 use Predis\ClientException;
 use Predis\ClientInterface;
 use Predis\Command\CommandInterface;
+use Predis\Connection\Cluster\ClusterInterface;
 use Predis\Connection\ConnectionInterface;
 use Predis\Connection\Replication\ReplicationInterface;
 use Predis\Response\ErrorInterface as ErrorResponseInterface;
@@ -129,26 +130,33 @@ class Pipeline implements ClientContextInterface
      */
     protected function executePipeline(ConnectionInterface $connection, \SplQueue $commands)
     {
-        foreach ($commands as $command) {
-            $connection->writeRequest($command);
-        }
-
         $responses = array();
-        $exceptions = $this->throwServerExceptions();
 
-        while (!$commands->isEmpty()) {
-            $command = $commands->dequeue();
-            $response = $connection->readResponse($command);
+        if ($connection instanceof ClusterInterface) {
+            while (!$commands->isEmpty()) {
+                $command = $commands->dequeue();
+                $responses[] = $connection->executeCommand($command);
+            }
+        } else {
+            foreach ($commands as $command) {
+                $connection->writeRequest($command);
+            }
 
-            if (!$response instanceof ResponseInterface) {
-                $responses[] = $command->parseResponse($response);
-            } elseif ($response instanceof ErrorResponseInterface && $exceptions) {
-                $this->exception($connection, $response);
-            } else {
-                $responses[] = $response;
+            $exceptions = $this->throwServerExceptions();
+
+            while (!$commands->isEmpty()) {
+                $command = $commands->dequeue();
+                $response = $connection->readResponse($command);
+
+                if (!$response instanceof ResponseInterface) {
+                    $responses[] = $command->parseResponse($response);
+                } elseif ($response instanceof ErrorResponseInterface && $exceptions) {
+                    $this->exception($connection, $response);
+                } else {
+                    $responses[] = $response;
+                }
             }
         }
-
         return $responses;
     }
 
@@ -157,7 +165,7 @@ class Pipeline implements ClientContextInterface
      *
      * @param bool $send Specifies if the commands in the buffer should be sent to Redis.
      *
-     * @return $this
+     * @return Pipeline
      */
     public function flushPipeline($send = true)
     {

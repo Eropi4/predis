@@ -160,7 +160,7 @@ class Client implements ClientInterface, \IteratorAggregate
      * @param mixed  $parameters Connection parameters.
      * @param string $option     Option for aggregate connections (`aggregate`, `cluster`, `replication`).
      *
-     * @return \Closure
+     * @return ConnectionInterface
      */
     protected function createAggregateConnection($parameters, $option)
     {
